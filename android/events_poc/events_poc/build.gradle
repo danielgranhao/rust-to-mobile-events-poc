@@ -16,9 +16,17 @@ android {
     }
 
     buildTypes {
+        debug {
+            packagingOptions {
+                doNotStrip '**/libjnidispatch.so'
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            packagingOptions {
+                doNotStrip '**/libjnidispatch.so'
+            }
         }
     }
     compileOptions {
