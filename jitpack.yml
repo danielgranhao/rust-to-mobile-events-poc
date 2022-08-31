@@ -1,2 +1,7 @@
 before_install:
   - cd android/events_poc
+install:
+  - echo "Running a custom install command"
+  - ./gradlew clean
+  - ./gradlew build
+  - ./gradlew publishToMavenLocal
