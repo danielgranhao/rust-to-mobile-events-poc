@@ -1,0 +1,6 @@
+framework module events_pocFFI {
+  umbrella header "events_pocFFI-umbrella.h"
+
+  export *
+  module * { export * }
+}
