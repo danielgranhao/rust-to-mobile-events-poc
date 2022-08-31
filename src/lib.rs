@@ -4,6 +4,8 @@ use log::Level;
 use log::LevelFilter;
 #[cfg(target_os = "ios")]
 use oslog::OsLogger;
+#[cfg(target_os = "android")]
+use android_logger::Config;
 
 /// Initializes Rust-side logging.
 ///
