@@ -1,3 +1,15 @@
+callback interface PersistCallback {
+    boolean exists(string path);
+    sequence<string> read_dir(string path);
+    boolean write_to_file(string path, sequence<u8> data);
+    sequence<u8> read(string path);
+};
+
+interface EventsPoc {
+    constructor(PersistCallback persist_callback);
+    void update_record_after_delay(string path, sequence<u8> data, u64 delay);
+};
+
 namespace events_poc {
     void init_logger_once();
 };

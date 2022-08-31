@@ -46,23 +46,39 @@ typedef struct RustCallStatus {
 // ⚠️ increment the version suffix in all instances of UNIFFI_SHARED_HEADER_V4 in this file.           ⚠️
 #endif // def UNIFFI_SHARED_H
 
-void events_poc_760d_init_logger_once(
+void ffi_events_poc_e131_EventsPoc_object_free(
+      void*_Nonnull ptr,
+    RustCallStatus *_Nonnull out_status
+    );
+void*_Nonnull events_poc_e131_EventsPoc_new(
+      uint64_t persist_callback,
+    RustCallStatus *_Nonnull out_status
+    );
+void events_poc_e131_EventsPoc_update_record_after_delay(
+      void*_Nonnull ptr,RustBuffer path,RustBuffer data,uint64_t delay,
+    RustCallStatus *_Nonnull out_status
+    );
+void ffi_events_poc_e131_PersistCallback_init_callback(
+      ForeignCallback  _Nonnull callback_stub,
+    RustCallStatus *_Nonnull out_status
+    );
+void events_poc_e131_init_logger_once(
       
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer ffi_events_poc_760d_rustbuffer_alloc(
+RustBuffer ffi_events_poc_e131_rustbuffer_alloc(
       int32_t size,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer ffi_events_poc_760d_rustbuffer_from_bytes(
+RustBuffer ffi_events_poc_e131_rustbuffer_from_bytes(
       ForeignBytes bytes,
     RustCallStatus *_Nonnull out_status
     );
-void ffi_events_poc_760d_rustbuffer_free(
+void ffi_events_poc_e131_rustbuffer_free(
       RustBuffer buf,
     RustCallStatus *_Nonnull out_status
     );
-RustBuffer ffi_events_poc_760d_rustbuffer_reserve(
+RustBuffer ffi_events_poc_e131_rustbuffer_reserve(
       RustBuffer buf,int32_t additional,
     RustCallStatus *_Nonnull out_status
     );

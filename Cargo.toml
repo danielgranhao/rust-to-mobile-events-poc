@@ -11,6 +11,7 @@ name = "uniffi_events_poc"
 uniffi = {version = "0.19.3"}
 log = "0.4.17"
 env_logger = "0.9.0"
+tokio = { version = "1", features = [ "io-util", "macros", "rt", "rt-multi-thread", "sync", "net", "time" ] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2.0"

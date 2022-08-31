@@ -19,13 +19,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_events_poc_760d_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_events_poc_e131_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_events_poc_760d_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_events_poc_e131_rustbuffer_free(self, $0) }
     }
 }
 
@@ -281,6 +281,53 @@ private func makeRustCall<T>(_ callback: (UnsafeMutablePointer<RustCallStatus>) 
 // Public interface members begin here.
 
 
+fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
+    typealias FfiType = UInt8
+    typealias SwiftType = UInt8
+
+    static func read(from buf: Reader) throws -> UInt8 {
+        return try lift(buf.readInt())
+    }
+
+    static func write(_ value: UInt8, into buf: Writer) {
+        buf.writeInt(lower(value))
+    }
+}
+
+fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
+    typealias FfiType = UInt64
+    typealias SwiftType = UInt64
+
+    static func read(from buf: Reader) throws -> UInt64 {
+        return try lift(buf.readInt())
+    }
+
+    static func write(_ value: SwiftType, into buf: Writer) {
+        buf.writeInt(lower(value))
+    }
+}
+
+fileprivate struct FfiConverterBool : FfiConverter {
+    typealias FfiType = Int8
+    typealias SwiftType = Bool
+
+    static func lift(_ value: Int8) throws -> Bool {
+        return value != 0
+    }
+
+    static func lower(_ value: Bool) -> Int8 {
+        return value ? 1 : 0
+    }
+
+    static func read(from buf: Reader) throws -> Bool {
+        return try lift(buf.readInt())
+    }
+
+    static func write(_ value: Bool, into buf: Writer) {
+        buf.writeInt(lower(value))
+    }
+}
+
 fileprivate struct FfiConverterString: FfiConverter {
     typealias SwiftType = String
     typealias FfiType = RustBuffer
@@ -319,12 +366,357 @@ fileprivate struct FfiConverterString: FfiConverter {
     }
 }
 
+
+public protocol EventsPocProtocol {
+    func updateRecordAfterDelay(path: String, data: [UInt8], delay: UInt64) 
+    
+}
+
+public class EventsPoc: EventsPocProtocol {
+    fileprivate let pointer: UnsafeMutableRawPointer
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+    required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+    public convenience init(persistCallback: PersistCallback)  {
+        self.init(unsafeFromRawPointer: try!
+    
+    rustCall() {
+    
+    events_poc_e131_EventsPoc_new(
+        FfiConverterCallbackInterfacePersistCallback.lower(persistCallback), $0)
+})
+    }
+
+    deinit {
+        try! rustCall { ffi_events_poc_e131_EventsPoc_object_free(pointer, $0) }
+    }
+
+    
+
+    
+    public func updateRecordAfterDelay(path: String, data: [UInt8], delay: UInt64)  {
+        try!
+    rustCall() {
+    
+    events_poc_e131_EventsPoc_update_record_after_delay(self.pointer, 
+        FfiConverterString.lower(path), 
+        FfiConverterSequenceUInt8.lower(data), 
+        FfiConverterUInt64.lower(delay), $0
+    )
+}
+    }
+    
+}
+
+
+fileprivate struct FfiConverterTypeEventsPoc: FfiConverter {
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = EventsPoc
+
+    static func read(from buf: Reader) throws -> EventsPoc {
+        let v: UInt64 = try buf.readInt()
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    static func write(_ value: EventsPoc, into buf: Writer) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        buf.writeInt(UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+
+    static func lift(_ pointer: UnsafeMutableRawPointer) throws -> EventsPoc {
+        return EventsPoc(unsafeFromRawPointer: pointer)
+    }
+
+    static func lower(_ value: EventsPoc) -> UnsafeMutableRawPointer {
+        return value.pointer
+    }
+}
+
+fileprivate extension NSLock {
+    func withLock<T>(f: () throws -> T) rethrows -> T {
+        self.lock()
+        defer { self.unlock() }
+        return try f()
+    }
+}
+
+fileprivate typealias Handle = UInt64
+fileprivate class ConcurrentHandleMap<T> {
+    private var leftMap: [Handle: T] = [:]
+    private var counter: [Handle: UInt64] = [:]
+    private var rightMap: [ObjectIdentifier: Handle] = [:]
+
+    private let lock = NSLock()
+    private var currentHandle: Handle = 0
+    private let stride: Handle = 1
+
+    func insert(obj: T) -> Handle {
+        lock.withLock {
+            let id = ObjectIdentifier(obj as AnyObject)
+            let handle = rightMap[id] ?? {
+                currentHandle += stride
+                let handle = currentHandle
+                leftMap[handle] = obj
+                rightMap[id] = handle
+                return handle
+            }()
+            counter[handle] = (counter[handle] ?? 0) + 1
+            return handle
+        }
+    }
+
+    func get(handle: Handle) -> T? {
+        lock.withLock {
+            leftMap[handle]
+        }
+    }
+
+    func delete(handle: Handle) {
+        remove(handle: handle)
+    }
+
+    @discardableResult
+    func remove(handle: Handle) -> T? {
+        lock.withLock {
+            defer { counter[handle] = (counter[handle] ?? 1) - 1 }
+            guard counter[handle] == 1 else { return leftMap[handle] }
+            let obj = leftMap.removeValue(forKey: handle)
+            if let obj = obj {
+                rightMap.removeValue(forKey: ObjectIdentifier(obj as AnyObject))
+            }
+            return obj
+        }
+    }
+}
+
+// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+private let IDX_CALLBACK_FREE: Int32 = 0
+
+// Declaration and FfiConverters for PersistCallback Callback Interface
+
+public protocol PersistCallback : AnyObject {
+    func exists(path: String)  -> Bool
+    func readDir(path: String)  -> [String]
+    func writeToFile(path: String, data: [UInt8])  -> Bool
+    func read(path: String)  -> [UInt8]
+    
+}
+
+// The ForeignCallback that is passed to Rust.
+fileprivate let foreignCallbackCallbackInterfacePersistCallback : ForeignCallback =
+    { (handle: Handle, method: Int32, args: RustBuffer, out_buf: UnsafeMutablePointer<RustBuffer>) -> Int32 in
+        func invokeExists(_ swiftCallbackInterface: PersistCallback, _ args: RustBuffer) throws -> RustBuffer {
+        defer { args.deallocate() }
+
+            let reader = Reader(data: Data(rustBuffer: args))
+            let result = swiftCallbackInterface.exists(
+                    path: try FfiConverterString.read(from: reader)
+                    )
+            let writer = Writer()
+                FfiConverterBool.write(result, into: writer)
+                return RustBuffer(bytes: writer.bytes)// TODO catch errors and report them back to Rust.
+                // https://github.com/mozilla/uniffi-rs/issues/351
+
+    }
+    func invokeReadDir(_ swiftCallbackInterface: PersistCallback, _ args: RustBuffer) throws -> RustBuffer {
+        defer { args.deallocate() }
+
+            let reader = Reader(data: Data(rustBuffer: args))
+            let result = swiftCallbackInterface.readDir(
+                    path: try FfiConverterString.read(from: reader)
+                    )
+            let writer = Writer()
+                FfiConverterSequenceString.write(result, into: writer)
+                return RustBuffer(bytes: writer.bytes)// TODO catch errors and report them back to Rust.
+                // https://github.com/mozilla/uniffi-rs/issues/351
+
+    }
+    func invokeWriteToFile(_ swiftCallbackInterface: PersistCallback, _ args: RustBuffer) throws -> RustBuffer {
+        defer { args.deallocate() }
+
+            let reader = Reader(data: Data(rustBuffer: args))
+            let result = swiftCallbackInterface.writeToFile(
+                    path: try FfiConverterString.read(from: reader), 
+                    data: try FfiConverterSequenceUInt8.read(from: reader)
+                    )
+            let writer = Writer()
+                FfiConverterBool.write(result, into: writer)
+                return RustBuffer(bytes: writer.bytes)// TODO catch errors and report them back to Rust.
+                // https://github.com/mozilla/uniffi-rs/issues/351
+
+    }
+    func invokeRead(_ swiftCallbackInterface: PersistCallback, _ args: RustBuffer) throws -> RustBuffer {
+        defer { args.deallocate() }
+
+            let reader = Reader(data: Data(rustBuffer: args))
+            let result = swiftCallbackInterface.read(
+                    path: try FfiConverterString.read(from: reader)
+                    )
+            let writer = Writer()
+                FfiConverterSequenceUInt8.write(result, into: writer)
+                return RustBuffer(bytes: writer.bytes)// TODO catch errors and report them back to Rust.
+                // https://github.com/mozilla/uniffi-rs/issues/351
+
+    }
+    
+
+        let cb = try! FfiConverterCallbackInterfacePersistCallback.lift(handle)
+        switch method {
+            case IDX_CALLBACK_FREE:
+                FfiConverterCallbackInterfacePersistCallback.drop(handle: handle)
+                // No return value.
+                // See docs of ForeignCallback in `uniffi/src/ffi/foreigncallbacks.rs`
+                return 0
+            case 1:
+                let buffer = try! invokeExists(cb, args)
+                out_buf.pointee = buffer
+                // Value written to out buffer.
+                // See docs of ForeignCallback in `uniffi/src/ffi/foreigncallbacks.rs`
+                return 1
+            case 2:
+                let buffer = try! invokeReadDir(cb, args)
+                out_buf.pointee = buffer
+                // Value written to out buffer.
+                // See docs of ForeignCallback in `uniffi/src/ffi/foreigncallbacks.rs`
+                return 1
+            case 3:
+                let buffer = try! invokeWriteToFile(cb, args)
+                out_buf.pointee = buffer
+                // Value written to out buffer.
+                // See docs of ForeignCallback in `uniffi/src/ffi/foreigncallbacks.rs`
+                return 1
+            case 4:
+                let buffer = try! invokeRead(cb, args)
+                out_buf.pointee = buffer
+                // Value written to out buffer.
+                // See docs of ForeignCallback in `uniffi/src/ffi/foreigncallbacks.rs`
+                return 1
+            
+            // This should never happen, because an out of bounds method index won't
+            // ever be used. Once we can catch errors, we should return an InternalError.
+            // https://github.com/mozilla/uniffi-rs/issues/351
+            default:
+                // An unexpected error happened.
+                // See docs of ForeignCallback in `uniffi/src/ffi/foreigncallbacks.rs`
+                return -1
+        }
+    }
+
+// FFIConverter protocol for callback interfaces
+fileprivate struct FfiConverterCallbackInterfacePersistCallback {
+    // Initialize our callback method with the scaffolding code
+    private static var callbackInitialized = false
+    private static func initCallback() {
+        try! rustCall { (err: UnsafeMutablePointer<RustCallStatus>) in
+                ffi_events_poc_e131_PersistCallback_init_callback(foreignCallbackCallbackInterfacePersistCallback, err)
+        }
+    }
+    private static func ensureCallbackinitialized() {
+        if !callbackInitialized {
+            initCallback()
+            callbackInitialized = true
+        }
+    }
+
+    static func drop(handle: Handle) {
+        handleMap.remove(handle: handle)
+    }
+
+    private static var handleMap = ConcurrentHandleMap<PersistCallback>()
+}
+
+extension FfiConverterCallbackInterfacePersistCallback : FfiConverter {
+    typealias SwiftType = PersistCallback
+    // We can use Handle as the FFIType because it's a typealias to UInt64
+    typealias FfiType = Handle
+
+    static func lift(_ handle: Handle) throws -> SwiftType {
+        ensureCallbackinitialized();
+        guard let callback = handleMap.get(handle: handle) else {
+            throw UniffiInternalError.unexpectedStaleHandle
+        }
+        return callback
+    }
+
+    static func read(from buf: Reader) throws -> SwiftType {
+        ensureCallbackinitialized();
+        let handle: Handle = try buf.readInt()
+        return try lift(handle)
+    }
+
+    static func lower(_ v: SwiftType) -> Handle {
+        ensureCallbackinitialized();
+        return handleMap.insert(obj: v)
+    }
+
+    static func write(_ v: SwiftType, into buf: Writer) {
+        ensureCallbackinitialized();
+        buf.writeInt(lower(v))
+    }
+}
+
+fileprivate struct FfiConverterSequenceUInt8: FfiConverterRustBuffer {
+    typealias SwiftType = [UInt8]
+
+    static func write(_ value: [UInt8], into buf: Writer) {
+        let len = Int32(value.count)
+        buf.writeInt(len)
+        for item in value {
+            FfiConverterUInt8.write(item, into: buf)
+        }
+    }
+
+    static func read(from buf: Reader) throws -> [UInt8] {
+        let len: Int32 = try buf.readInt()
+        var seq = [UInt8]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterUInt8.read(from: buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]
+
+    static func write(_ value: [String], into buf: Writer) {
+        let len = Int32(value.count)
+        buf.writeInt(len)
+        for item in value {
+            FfiConverterString.write(item, into: buf)
+        }
+    }
+
+    static func read(from buf: Reader) throws -> [String] {
+        let len: Int32 = try buf.readInt()
+        var seq = [String]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterString.read(from: buf))
+        }
+        return seq
+    }
+}
+
 public func initLoggerOnce()  {
     try!
     
     rustCall() {
     
-    events_poc_760d_init_logger_once($0)
+    events_poc_e131_init_logger_once($0)
 }
 }
 
