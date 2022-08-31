@@ -56,7 +56,7 @@ impl EventsPoc {
     pub fn update_record_after_delay(&self, path: String, data: Vec<u8>, delay_secs: u64) {
         let task_callback = Arc::clone(&self.persist_callback);
         self.tokio_runtime.spawn(async move {
-            tokio::time::interval(Duration::from_secs(delay_secs));
+            tokio::time::sleep(Duration::from_secs(delay_secs)).await;
             task_callback.write_to_file(path, data);
         });
     }
